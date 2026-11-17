@@ -121,6 +121,7 @@ public class ScoringTest {
     public void pairBonusAddsThree() throws IOException {
         // Network (1) + runtime class loading (2) + the paper's pair bonus (3) = 6 = HIGH.
         ScanResult r = scan(jar("com/example/A.class", cls("com/example/A").method("run", "()V", mv -> {
+            invokeVirtual(mv, "java/net/HttpURLConnection", "getResponseCode", "()I");
             invokeVirtual(mv, "java/net/URL", "openStream", "()Ljava/io/InputStream;");
             newObject(mv, "java/net/URLClassLoader", "([Ljava/net/URL;)V");
         }).bytes()));

@@ -56,7 +56,10 @@ public class RulesTest {
 
     @Test
     public void networkAccess() throws IOException {
-        assertTrue(signalsOf(mv -> invokeVirtual(mv, "java/net/URL", "openConnection", "()Ljava/net/URLConnection;"))
+        assertTrue(signalsOf(mv -> {
+            ldc(mv, "https://example.com/api");
+            invokeVirtual(mv, "java/net/URL", "openConnection", "()Ljava/net/URLConnection;");
+        })
                 .contains(Signal.NETWORK_ACCESS));
         assertTrue(signalsOf(mv -> invokeVirtual(mv, "com/example/shadow/okhttp3/OkHttpClient", "newCall",
                 "(Lokhttp3/Request;)Lokhttp3/Call;")).contains(Signal.NETWORK_ACCESS));
@@ -70,6 +73,24 @@ public class RulesTest {
             newObject(mv, "java/net/URL", "(Ljava/lang/String;)V");
             invokeVirtual(mv, "java/net/URL", "toString", "()Ljava/lang/String;");
         }));
+    }
+
+    @Test
+    public void readingBundledResourceIsNotNetwork() throws IOException {
+        // getClass().getResource("/lang.json").openStream() reads a file inside the mod (seen in LuckPerms).
+        assertEquals(Set.of(), signalsOf(mv -> {
+            ldc(mv, "/assets/example/lang.json");
+            invokeVirtual(mv, "java/lang/Class", "getResource", "(Ljava/lang/String;)Ljava/net/URL;");
+            invokeVirtual(mv, "java/net/URL", "openStream", "()Ljava/io/InputStream;");
+        }));
+    }
+
+    @Test
+    public void httpConnectionWithoutLiteralUrlIsNetwork() throws IOException {
+        assertTrue(signalsOf(mv -> {
+            invokeVirtual(mv, "java/net/URL", "openConnection", "()Ljava/net/URLConnection;");
+            invokeVirtual(mv, "java/net/HttpURLConnection", "setRequestMethod", "(Ljava/lang/String;)V");
+        }).contains(Signal.NETWORK_ACCESS));
     }
 
     @Test
@@ -115,7 +136,19 @@ public class RulesTest {
     @Test
     public void obfuscatedImpossibleNames() throws IOException {
         assertTrue(signals(jar("com/example/A.class", cls("com/example/A")
-                .field("if").field("IlIlIlIl").method("do", "()V", mv -> { }).bytes()))
+                .field("IlIlIlIl").field("IIlIlIll").method("run it", "()V", mv -> { }).bytes()))
+                .contains(Signal.OBFUSCATED_CODE));
+    }
+
+    @Test
+    public void kotlinNamesAndPackageInfoAreNotObfuscation() throws IOException {
+        // Kotlin may name methods after Java keywords (seen in Essential); javac emits package-info.
+        assertFalse(signals(jar(
+                "com/example/Insns.class", cls("com/example/Insns").method("goto", "()V", mv -> { })
+                        .method("default", "()V", mv -> { }).method("new", "()V", mv -> { }).bytes(),
+                "com/example/package-info.class", cls("com/example/package-info").bytes(),
+                "com/example/a/package-info.class", cls("com/example/a/package-info").bytes(),
+                "com/example/b/package-info.class", cls("com/example/b/package-info").bytes()))
                 .contains(Signal.OBFUSCATED_CODE));
     }
 
@@ -277,12 +310,14 @@ public class RulesTest {
         assertTrue(signalsOf(mv -> ldc(mv, "/Library/LaunchAgents/com.example.helper.plist"))
                 .contains(Signal.PERSISTENCE_PATHS));
         assertTrue(signalsOf(mv -> ldc(mv, "~/.config/systemd/user/helper.service")).contains(Signal.PERSISTENCE_PATHS));
+        assertTrue(signalsOf(mv -> ldc(mv, "(crontab -l; echo \"@reboot helper\") | crontab -")).contains(Signal.PERSISTENCE_PATHS));
     }
 
     @Test
     public void persistenceNearMiss() throws IOException {
         assertEquals(Set.of(), signalsOf(mv -> {
             ldc(mv, "config/startup-screen.json");
+            ldc(mv, "CRONTAB"); // an enum value in the Sentry library (seen in EntityCulling)
             ldc(mv, "Running on Windows");
         }));
     }
@@ -306,6 +341,15 @@ public class RulesTest {
         }));
     }
 
+    @Test
+    public void moduleInfoWithoutSuperclassIsFine() throws IOException {
+        org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+        cw.visit(Opcodes.V17, Opcodes.ACC_MODULE, "module-info", null, null, null);
+        cw.visitModule("example.mod", 0, null).visitEnd();
+        cw.visitEnd();
+        assertEquals(Set.of(), signals(jar("module-info.class", cw.toByteArray())));
+    }
+
     // ---- evidence details ----
 
     @Test
@@ -323,6 +367,7 @@ public class RulesTest {
     @Test
     public void repeatedEvidenceIsReportedOnce() throws IOException {
         List<Finding> f = scanJar(jar("com/example/A.class", cls("com/example/A").method("run", "()V", mv -> {
+            ldc(mv, "https://example.com/data");
             for (int i = 0; i < 5; i++) {
                 invokeVirtual(mv, "java/net/URL", "openStream", "()Ljava/io/InputStream;");
             }

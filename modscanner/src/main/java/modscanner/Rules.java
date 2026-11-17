@@ -24,7 +24,7 @@ final class Rules {
 
     record Api(Signal signal, String owner, String name) {
         boolean matches(String callOwner, String callName) {
-            if (!name.equals(callName)) {
+            if (!name.equals(callName) && !name.equals("*")) {
                 return false;
             }
             if (owner.equals("*")) {
@@ -49,7 +49,9 @@ final class Rules {
 
     static {
         apis(Signal.NETWORK_ACCESS,
-                "java/net/URL#openConnection", "java/net/URL#openStream", "java/net/URL#getContent",
+                // URL.openStream/openConnection are handled in checkClass: they also read files bundled
+                // in the mod's own JAR, so they only count next to a web address or HttpURLConnection.
+                "java/net/HttpURLConnection#*", "javax/net/ssl/HttpsURLConnection#*",
                 "java/net/Socket#<init>", "java/net/Socket#connect",
                 "javax/net/SocketFactory#createSocket", "javax/net/ssl/SSLSocketFactory#createSocket",
                 "java/net/ServerSocket#<init>", "java/net/DatagramSocket#<init>", "java/net/DatagramSocket#send",
@@ -112,6 +114,9 @@ final class Rules {
     /** Writing ZIP/JAR files. Opening a zip file system only counts if the class also writes files. */
     private static final Set<String> ZIP_WRITERS = Set.of(
             "java/util/zip/ZipOutputStream#<init>", "java/util/jar/JarOutputStream#<init>");
+    private static final Set<String> URL_READS = Set.of(
+            "java/net/URL#openConnection", "java/net/URL#openStream", "java/net/URL#getContent");
+
     private static final Set<String> FILE_WRITERS = Set.of(
             "java/nio/file/Files#write", "java/nio/file/Files#copy", "java/nio/file/Files#move",
             "java/nio/file/Files#newOutputStream", "java/io/FileOutputStream#<init>");
@@ -151,7 +156,7 @@ final class Rules {
             "currentversion/policies/explorer/run", "image file execution options", "schtasks",
             "library/launchagents", "library/launchdaemons", "launchctl",
             "/etc/systemd/", ".config/systemd/user", "systemctl enable", "systemctl --user", ".config/autostart",
-            "crontab", "/etc/cron", "/etc/rc.local", "/etc/init.d/", ".bashrc", ".bash_profile", ".zshrc");
+            "crontab -", "/etc/cron", "/var/spool/cron", "/etc/rc.local", "/etc/init.d/", ".bashrc", ".bash_profile", ".zshrc");
 
     // What makes a decoded string worth reporting: it names a place, a program, or Java internals.
     private static final Pattern URL = Pattern.compile("\\b(?:https?|ftp|wss?)://");
@@ -161,13 +166,6 @@ final class Rules {
     private static final Pattern JDK_CLASS = Pattern.compile("\\b(?:java|javax|sun|jdk)\\.[a-z]+\\.");
     private static final Pattern PROGRAM = Pattern.compile(
             "\\.(?:exe|dll|jar|bat|ps1|vbs|sh|dylib|so)\\b|cmd\\.exe|powershell|/bin/(?:ba)?sh|rundll32|osascript");
-
-    private static final Set<String> JAVA_KEYWORDS = Set.of(
-            "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const", "continue",
-            "default", "do", "double", "else", "enum", "extends", "final", "finally", "float", "for", "goto", "if",
-            "implements", "import", "instanceof", "int", "interface", "long", "native", "new", "package", "private",
-            "protected", "public", "return", "short", "static", "super", "switch", "synchronized", "this", "throw",
-            "throws", "transient", "try", "void", "volatile", "while");
 
     /** URLs on these hosts do not make an encoded string suspicious (Minecraft skins are Base64 JSON). */
     static final Set<String> DEFAULT_IGNORED_HOSTS = Set.of("textures.minecraft.net");
@@ -261,11 +259,16 @@ final class Rules {
         }
     }
 
+    /**
+     * Characters no JVM language compiler emits in a name, or long runs of I and l (a common obfuscator
+     * trick). Java keywords are not counted: Kotlin legitimately names things "goto" or "default".
+     */
     private static boolean isImpossibleName(String n) {
-        if (n.isEmpty() || n.equals("<init>") || n.equals("<clinit>") || n.equals("<fields>")) {
+        if (n.isEmpty() || n.equals("<init>") || n.equals("<clinit>") || n.equals("<fields>")
+                || n.equals("package-info") || n.equals("module-info")) {
             return false;
         }
-        if (JAVA_KEYWORDS.contains(n) || n.matches("[Il1]{6,}")) {
+        if (n.matches("[Il1]{6,}")) {
             return true;
         }
         for (char ch : n.toCharArray()) {
@@ -283,7 +286,7 @@ final class Rules {
             initLoadTime |= m.loadTime && (m.name.equals("<clinit>") || m.name.equals("<init>"));
         }
 
-        if (CLASS_LOADER_TYPES.contains(c.superName)) {
+        if (c.superName != null && CLASS_LOADER_TYPES.contains(c.superName)) { // module-info has no superclass
             out.add(Signal.RUNTIME_CLASS_LOADING, cls, null, "is its own class loader (extends "
                     + c.superName.replace('/', '.') + ")", "class", 0, initLoadTime);
         }
@@ -296,6 +299,8 @@ final class Rules {
         ClassFacts.Method reflectionMethod = null;
         ClassFacts.Method zipWriterMethod = null;
         ClassFacts.Method urlLoaderMethod = null;
+        List<ClassFacts.Call> urlReads = new ArrayList<>();
+        List<ClassFacts.Method> urlReadMethods = new ArrayList<>();
         boolean writesFiles = false;
         boolean opensZipFileSystem = false;
         boolean usesAsmWriter = false;
@@ -327,6 +332,10 @@ final class Rules {
                 if (key.startsWith("java/net/URLClassLoader#") && urlLoaderMethod == null) {
                     urlLoaderMethod = m;
                 }
+                if (URL_READS.contains(key)) {
+                    urlReads.add(call);
+                    urlReadMethods.add(m);
+                }
             }
             for (ClassFacts.Str s : m.strings) {
                 checkString(cls, m, s, out);
@@ -350,6 +359,19 @@ final class Rules {
                     out.add(api.signal(), cls, reflectionMethod.name, "reflection: "
                             + api.owner().replace('/', '.') + "." + api.name(), "reflection", 0, reflectionMethod.loadTime);
                 }
+            }
+        }
+
+        // Reading a URL is network access when the class names a web address or uses HTTP connections.
+        boolean usesHttpConnection = c.methods.stream().flatMap(m -> m.calls.stream())
+                .anyMatch(call -> call.owner().equals("java/net/HttpURLConnection")
+                        || call.owner().equals("javax/net/ssl/HttpsURLConnection"));
+        if (hasRemoteUrl || usesHttpConnection) {
+            for (int i = 0; i < urlReads.size(); i++) {
+                ClassFacts.Call call = urlReads.get(i);
+                ClassFacts.Method m = urlReadMethods.get(i);
+                out.add(Signal.NETWORK_ACCESS, cls, m.name, "java.net.URL." + call.name(),
+                        call.methodRef() ? "method_ref" : "call", call.line(), m.loadTime);
             }
         }
 

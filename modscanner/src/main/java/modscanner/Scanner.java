@@ -18,7 +18,20 @@ final class Scanner {
         this.rules = new Rules(Set.copyOf(config.encodedUrlIgnoreHosts));
     }
 
+    /** Never throws: a bug triggered by one strange file becomes an error result, so a folder scan keeps going. */
     ScanResult scan(Path file) {
+        try {
+            return scanOrThrow(file);
+        } catch (RuntimeException e) {
+            ScanResult r = new ScanResult();
+            r.file = file.toString();
+            r.complete = false;
+            r.error = "internal scanner error: " + e;
+            return r;
+        }
+    }
+
+    private ScanResult scanOrThrow(Path file) {
         ScanResult r = new ScanResult();
         r.file = file.toString();
         ModFile mod;

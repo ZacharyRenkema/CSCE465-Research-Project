@@ -48,7 +48,7 @@ Output: the default text report shows the risk level first, then one plain-langu
 - `modscanner/` is a Maven project (Java 17 target, ASM tree API, Gson, JUnit 4). The shade plugin builds a single runnable jar.
 - Maven is not installed system-wide; use the wrapper. From `modscanner/`: `.\mvnw.cmd package` on Windows, `./mvnw package` on macOS and Linux. The first run downloads Maven. The jar is `modscanner/target/modscanner-0.1.0.jar`.
 - It must run on macOS as well as Windows, because the demo may be on a Mac. Use `Path` APIs, never hard-coded path separators or Windows-only commands. `.gitattributes` keeps `mvnw` at LF line endings and git stores it as executable; keep both. Detection rules must cover macOS and Linux targets too (Mach-O binaries, LaunchAgents, systemd), not just Windows.
-- Source files (all in `modscanner/src/main/java/modscanner/`): `ArchiveReader` reads the file and nested JARs into a `ModFile` under zip-bomb limits; `ClassAnalyzer` turns each class into `ClassFacts` (calls, strings, decoded strings); `Strings` has the decoding helpers; `Rules` holds every detection rule (API tables and path/URL patterns) and produces `Finding`s for each `Signal`; `EntrypointParser` reads loader metadata into `Entrypoint`s; `LoadTime` marks methods reachable from entrypoints (call depth from config); `Scanner` runs the whole pipeline and computes the score; `ScanConfig` loads `default-config.json` plus an optional override file. Pairs are counted when both signals appear anywhere in the download, nested JARs included. New detection logic belongs in `Rules`, with a trigger test and a near-miss test in `RulesTest`. Tests build synthetic fixtures with `Fixtures` in `src/test`.
+- Source files (all in `modscanner/src/main/java/modscanner/`): `ArchiveReader` reads the file and nested JARs into a `ModFile` under zip-bomb limits; `ClassAnalyzer` turns each class into `ClassFacts` (calls, strings, decoded strings); `Strings` has the decoding helpers; `Rules` holds every detection rule (API tables and path/URL patterns) and produces `Finding`s for each `Signal`; `EntrypointParser` reads loader metadata into `Entrypoint`s; `LoadTime` marks methods reachable from entrypoints (call depth from config); `Scanner` runs the whole pipeline and computes the score; `ScanConfig` loads `default-config.json` plus an optional override file; `Report` formats text and JSON; `Main` is the command line. The README documents usage and every rule. Pairs are counted when both signals appear anywhere in the download, nested JARs included. New detection logic belongs in `Rules`, with a trigger test and a near-miss test in `RulesTest`. Tests build synthetic fixtures with `Fixtures` in `src/test`.
 - `target/` and downloaded mods are not committed.
 - The paper is LaTeX and is not kept in this repo. When a code change makes the paper inaccurate (a new pair, a changed detection method, a new limitation), say so in your summary so we can update it.
 
@@ -60,7 +60,17 @@ We are building this in small steps and committing after each one. Update this l
 2. [x] Reading input: archive checks, zip-bomb limits, nested JARs, file inventory, class analysis (calls, strings, decoded strings).
 3. [x] The ten signal rules, each with a test that triggers it and a near-miss test that does not.
 4. [x] Entrypoints for each loader, load-time marking, risk score, pairs, thresholds.
-5. [ ] Text and JSON reports, command line, directory mode, exit codes, README, end-to-end run on a real benign mod.
+5. [x] Text and JSON reports, command line, directory mode, exit codes, README, end-to-end run on a real benign mod.
+
+## Benign false-positive check (2026-11-17)
+
+17 popular Modrinth mods were scanned (kept in `samples/benign/`, not in git; rerun with `java -jar modscanner/target/modscanner-0.1.0.jar samples/benign`). Four rule bugs found this way were fixed, each with a near-miss test: `package-info` counted as an impossible name, Java keywords used as Kotlin names counted as obfuscation, `URL.openStream` on bundled resources counted as network access, and the word "CRONTAB" counted as persistence.
+
+Five stay HIGH because they really have the behavior: AuthMe (account switcher: reads the session token and logs in over the network), Essential (downloads and runs its own updates, reads the token, bundles natives), LuckPerms (downloads libraries and loads them in its own class loader), WorldEdit (bundled Rhino JavaScript engine defines classes, plus network), and Sodium (runs `xdg-open` and `lspci` at startup and generates classes). These are expected "hard benign" false positives for the paper. Do not add allow-lists or per-mod exceptions to make them pass; that would be a signature, and it would bias the evaluation.
+
+## Demo
+
+Every build writes synthetic demo mods to `modscanner/target/demo-mods/` (see `DemoModsTest`). Use those for demos, on Windows or macOS. Never real malware.
 
 ## Working together
 
