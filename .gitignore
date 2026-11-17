@@ -1,0 +1,17 @@
+# Build output
+target/
+
+# Mod samples never go in git. Benign mods are downloaded for local testing;
+# malware samples stay inside the isolated analysis VM.
+samples/
+*.jar
+
+# IDE and OS files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+Thumbs.db
