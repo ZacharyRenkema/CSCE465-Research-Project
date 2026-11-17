@@ -46,7 +46,9 @@ Output: the default text report shows the risk level first, then one plain-langu
 ## Build and layout
 
 - `modscanner/` is a Maven project (Java 17 target, ASM tree API, Gson, JUnit 4). The shade plugin builds a single runnable jar.
-- Maven is not installed system-wide; use the wrapper. From `modscanner/`: `.\mvnw.cmd package` on Windows, `./mvnw package` elsewhere. The jar is `modscanner/target/modscanner-0.1.0.jar`.
+- Maven is not installed system-wide; use the wrapper. From `modscanner/`: `.\mvnw.cmd package` on Windows, `./mvnw package` on macOS and Linux. The first run downloads Maven. The jar is `modscanner/target/modscanner-0.1.0.jar`.
+- It must run on macOS as well as Windows, because the demo may be on a Mac. Use `Path` APIs, never hard-coded path separators or Windows-only commands. `.gitattributes` keeps `mvnw` at LF line endings and git stores it as executable; keep both. Detection rules must cover macOS and Linux targets too (Mach-O binaries, LaunchAgents, systemd), not just Windows.
+- Source files (all in `modscanner/src/main/java/modscanner/`): `ArchiveReader` reads the file and nested JARs into a `ModFile` under zip-bomb limits; `ClassAnalyzer` turns each class into `ClassFacts` (calls, strings, decoded strings); `Strings` has the decoding helpers. Tests build synthetic fixtures with `Fixtures` in `src/test`.
 - `target/` and downloaded mods are not committed.
 - The paper is LaTeX and is not kept in this repo. When a code change makes the paper inaccurate (a new pair, a changed detection method, a new limitation), say so in your summary so we can update it.
 
@@ -55,7 +57,7 @@ Output: the default text report shows the risk level first, then one plain-langu
 We are building this in small steps and committing after each one. Update this list as steps land.
 
 1. [x] Project setup: Maven wrapper, `.gitignore`, dependencies, this file.
-2. [ ] Reading input: archive checks, zip-bomb limits, nested JARs, file inventory, class analysis (calls, strings, decoded strings).
+2. [x] Reading input: archive checks, zip-bomb limits, nested JARs, file inventory, class analysis (calls, strings, decoded strings).
 3. [ ] The ten signal rules, each with a test that triggers it and a near-miss test that does not.
 4. [ ] Entrypoints for each loader, load-time marking, risk score, pairs, thresholds.
 5. [ ] Text and JSON reports, command line, directory mode, exit codes, README, end-to-end run on a real benign mod.
