@@ -4,10 +4,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Opens the operating system's camera app. Called from DemoMod when the title screen loads.
- * Client-side only.
- */
 public final class NothingSuspiciousHere {
 
     private NothingSuspiciousHere() {}
