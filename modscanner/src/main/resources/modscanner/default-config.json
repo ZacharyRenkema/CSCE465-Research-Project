@@ -1,0 +1,61 @@
+{
+  "weights": {
+    "network_access": 1,
+    "native_code": 1,
+    "obfuscated_code": 1,
+    "encoded_strings": 2,
+    "runtime_class_loading": 2,
+    "process_execution": 2,
+    "webhooks_or_paste_sites": 3,
+    "sensitive_file_access": 3,
+    "persistence_paths": 3,
+    "modifies_other_jars": 3
+  },
+  "loadTimeMultiplier": 2,
+  "pairs": [
+    {
+      "a": "network_access",
+      "b": "runtime_class_loading",
+      "bonus": 3,
+      "source": "paper",
+      "reason": "Can download code and then run it."
+    },
+    {
+      "a": "sensitive_file_access",
+      "b": "network_access",
+      "bonus": 3,
+      "source": "proposed",
+      "reason": "Can read saved logins and send them over the internet."
+    },
+    {
+      "a": "sensitive_file_access",
+      "b": "webhooks_or_paste_sites",
+      "bonus": 3,
+      "source": "proposed",
+      "reason": "Can read saved logins and has a common drop point for stolen data."
+    },
+    {
+      "a": "encoded_strings",
+      "b": "runtime_class_loading",
+      "bonus": 3,
+      "source": "proposed",
+      "reason": "Hides text such as a URL or class name and loads code that is not in the file."
+    },
+    {
+      "a": "persistence_paths",
+      "b": "process_execution",
+      "bonus": 3,
+      "source": "proposed",
+      "reason": "Can set a program to start with the computer and can start programs."
+    }
+  ],
+  "thresholds": {
+    "medium": 3,
+    "high": 6
+  },
+  "flagAt": "HIGH",
+  "loadTimeCallDepth": 3,
+  "encodedUrlIgnoreHosts": [
+    "textures.minecraft.net"
+  ]
+}
