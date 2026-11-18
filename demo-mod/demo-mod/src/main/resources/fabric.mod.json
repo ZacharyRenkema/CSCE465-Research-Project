@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "csce465demo",
+  "version": "${version}",
+  "name": "CSCE465 Demo",
+  "description": "Draws 'Hello CSCE465!' on the title screen. Benign demo for our mod scanner.",
+  "authors": ["Zachary Renkema", "Cameron Farley"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["edu.tamu.csce465.demo.DemoMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
